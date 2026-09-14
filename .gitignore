@@ -1,0 +1,36 @@
+# 本地配置与密钥（切勿提交）
+config.json
+
+# 工程与音频
+*.xx1proj
+*.mp3
+*.wav
+*.flac
+*.m4a
+*.ogg
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+venv/
+env/
+
+# 打包 / IDE
+build/
+dist/
+.idea/
+.vscode/
+*.spec.bak
+
+# 系统
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 本地调试与含接口回包的缓存
+tests/_live_full/
+tests/_last_llm_raw.txt
+*.log

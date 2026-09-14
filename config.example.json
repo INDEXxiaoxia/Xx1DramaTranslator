@@ -1,0 +1,23 @@
+{
+  "asr": {
+    "api_url": "https://dashscope.aliyuncs.com/api/v1",
+    "api_key": "",
+    "model": "paraformer-v2"
+  },
+  "llm": {
+    "api_url": "https://api.example.com/v1",
+    "api_key": "",
+    "model": "your-model-name",
+    "temperature": 0.3,
+    "max_tokens": 4096,
+    "timeout_sec": 120
+  },
+  "source_lang": "日语",
+  "target_lang": "简体中文",
+  "translate_batch_size": 20,
+  "proofread_batch_size": 40,
+  "asr_max_seconds": 14400,
+  "asr_chunk_seconds": 1800,
+  "additional_prompt": "",
+  "playlist_expanded": false
+}
