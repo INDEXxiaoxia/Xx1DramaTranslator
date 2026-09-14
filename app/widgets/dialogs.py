@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
 
 from app.config import AppConfig, AsrConfig, LlmConfig, default_config_path
 from app.services.connection_test import test_asr_connection, test_llm_connection
+from app.theme import Colors
 
 
 LANG_OPTIONS = ["日语", "简体中文", "英语", "繁体中文", "韩语"]
@@ -77,12 +78,15 @@ class SettingsDialog(QDialog):
         self._test_poll.timeout.connect(self._poll_test_result)
 
         root = QVBoxLayout(self)
+        root.setContentsMargins(16, 16, 16, 12)
+        root.setSpacing(12)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QScrollArea.Shape.NoFrame)
         body = QWidget()
         layout = QVBoxLayout(body)
-        layout.setSpacing(12)
+        layout.setSpacing(14)
+        layout.setContentsMargins(4, 4, 8, 4)
 
         # ---- 基础设置 ----
         basic = QGroupBox("基础设置（必填）")
@@ -98,8 +102,8 @@ class SettingsDialog(QDialog):
         self.asr_model.setPlaceholderText("广播剧推荐：paraformer-v2（有时间戳）")
         asr_form.addRow("API 地址", self.asr_url)
         asr_hint = QLabel(ASR_URL_HINT)
+        asr_hint.setObjectName("HintLabel")
         asr_hint.setWordWrap(True)
-        asr_hint.setStyleSheet("color:#666;font-size:11px;")
         asr_form.addRow("", asr_hint)
         asr_form.addRow("Key", self.asr_key)
         asr_form.addRow("模型名称", self.asr_model)
@@ -107,8 +111,8 @@ class SettingsDialog(QDialog):
             "说明：qwen3-asr-flash 走同步接口，句级时间戳较弱；"
             "paraformer-v2 走临时 OSS 转写，适合字幕。"
         )
+        tip.setObjectName("HintLabel")
         tip.setWordWrap(True)
-        tip.setStyleSheet("color:#666;font-size:11px;")
         asr_form.addRow("", tip)
         asr_test_row = QHBoxLayout()
         self.btn_test_asr = QPushButton("测试 ASR 连通")
@@ -132,8 +136,8 @@ class SettingsDialog(QDialog):
         self.llm_model.setPlaceholderText("例如：qwen-plus / gpt-4o-mini")
         llm_form.addRow("API 地址", self.llm_url)
         llm_hint = QLabel(LLM_URL_HINT)
+        llm_hint.setObjectName("HintLabel")
         llm_hint.setWordWrap(True)
-        llm_hint.setStyleSheet("color:#666;font-size:11px;")
         llm_form.addRow("", llm_hint)
         llm_form.addRow("Key", self.llm_key)
         llm_form.addRow("模型名称", self.llm_model)
@@ -197,8 +201,8 @@ class SettingsDialog(QDialog):
         layout.addWidget(advanced)
 
         cfg_path_hint = QLabel(f"设置将保存到程序目录：\n{default_config_path()}")
+        cfg_path_hint.setObjectName("HintLabel")
         cfg_path_hint.setWordWrap(True)
-        cfg_path_hint.setStyleSheet("color:#888;font-size:11px;")
         layout.addWidget(cfg_path_hint)
         layout.addStretch(1)
 
@@ -208,7 +212,9 @@ class SettingsDialog(QDialog):
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
         )
-        buttons.button(QDialogButtonBox.StandardButton.Save).setText("保存")
+        save_btn = buttons.button(QDialogButtonBox.StandardButton.Save)
+        save_btn.setText("保存")
+        save_btn.setObjectName("PrimaryButton")
         buttons.button(QDialogButtonBox.StandardButton.Cancel).setText("取消")
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
@@ -241,7 +247,7 @@ class SettingsDialog(QDialog):
         asr, llm = self._snapshot_for_test()
         label = self.llm_test_result if kind == "llm" else self.asr_test_result
         label.setText("测试中（最长约 18 秒）…")
-        label.setStyleSheet("color:#1a5fb4;")
+        label.setStyleSheet(f"color:{Colors.busy};")
         self._set_testing_ui(True)
         self._test_kind = kind
         with self._test_lock:
@@ -273,7 +279,9 @@ class SettingsDialog(QDialog):
         label = self.llm_test_result if kind == "llm" else self.asr_test_result
         ok, msg = payload
         label.setText(msg)
-        label.setStyleSheet("color:#2ec27e;" if ok else "color:#c01c28;")
+        label.setStyleSheet(
+            f"color:{Colors.ok};" if ok else f"color:{Colors.err};"
+        )
         self._set_testing_ui(False)
         self._test_kind = None
 
@@ -321,12 +329,26 @@ class PromptDialog(QDialog):
         self.setWindowTitle("附加提示词")
         self.setMinimumSize(480, 360)
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("人名、专有名词对照、额外翻译要求："))
+        layout.setContentsMargins(18, 18, 18, 14)
+        layout.setSpacing(12)
+        head = QLabel("人名、专有名词对照、额外翻译要求")
+        head.setStyleSheet(f"color:{Colors.ink};font-weight:600;font-size:14px;")
+        layout.addWidget(head)
+        tip = QLabel("写清楚角色名与固定译法，会带进后续翻译与统校。")
+        tip.setObjectName("HintLabel")
+        tip.setWordWrap(True)
+        layout.addWidget(tip)
         self.editor = QPlainTextEdit(text)
+        self.editor.setObjectName("ContentEdit")
+        self.editor.setPlaceholderText("例如：太郎 → 太郎\n学校祭 → 校园祭")
         layout.addWidget(self.editor)
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
+        ok_btn = buttons.button(QDialogButtonBox.StandardButton.Ok)
+        ok_btn.setText("保存")
+        ok_btn.setObjectName("PrimaryButton")
+        buttons.button(QDialogButtonBox.StandardButton.Cancel).setText("取消")
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
@@ -339,8 +361,15 @@ class ExportDialog(QDialog):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self.setWindowTitle("导出设置")
+        self.setMinimumWidth(360)
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(18, 18, 18, 14)
+        layout.setSpacing(14)
+        head = QLabel("导出字幕")
+        head.setStyleSheet(f"color:{Colors.ink};font-weight:600;font-size:14px;")
+        layout.addWidget(head)
         form = QFormLayout()
+        form.setSpacing(10)
         self.format_box = _NoWheelComboBox()
         self.format_box.addItems(["ASS", "SRT"])
         form.addRow("导出格式", self.format_box)
@@ -352,6 +381,7 @@ class ExportDialog(QDialog):
         self.chk_target.setChecked(True)
         row.addWidget(self.chk_source)
         row.addWidget(self.chk_target)
+        row.addStretch(1)
         wrap = QWidget()
         wrap.setLayout(row)
         form.addRow("导出内容", wrap)
@@ -360,7 +390,10 @@ class ExportDialog(QDialog):
         self.buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
-        self.buttons.button(QDialogButtonBox.StandardButton.Ok).setText("确认导出")
+        ok = self.buttons.button(QDialogButtonBox.StandardButton.Ok)
+        ok.setText("确认导出")
+        ok.setObjectName("PrimaryButton")
+        self.buttons.button(QDialogButtonBox.StandardButton.Cancel).setText("取消")
         self.buttons.rejected.connect(self.reject)
         self.buttons.accepted.connect(self._on_ok)
         self.chk_source.stateChanged.connect(self._update_ok)

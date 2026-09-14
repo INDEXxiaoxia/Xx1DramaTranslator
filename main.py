@@ -11,10 +11,11 @@ if str(ROOT) not in sys.path:
 
 warnings.filterwarnings("ignore", message=".*urllib3.*chardet.*charset_normalizer.*")
 
-from PySide6.QtGui import QIcon
+from PySide6.QtGui import QFont, QIcon
 from PySide6.QtWidgets import QApplication
 
 from app.main_window import MainWindow
+from app.theme import FONT_UI_FALLBACKS, app_stylesheet
 
 
 def _app_icon_path() -> Path:
@@ -30,6 +31,13 @@ def main() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName("Xx1DramaTranslator")
     app.setOrganizationName("Xx1")
+    for family in FONT_UI_FALLBACKS:
+        font = QFont(family, 10)
+        font.setStyleHint(QFont.StyleHint.SansSerif)
+        if font.exactMatch() or family == "Segoe UI":
+            app.setFont(font)
+            break
+    app.setStyleSheet(app_stylesheet())
     icon = QIcon(str(_app_icon_path()))
     if not icon.isNull():
         app.setWindowIcon(icon)

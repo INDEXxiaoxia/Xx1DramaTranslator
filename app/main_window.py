@@ -3,11 +3,12 @@ from __future__ import annotations
 from pathlib import Path
 import time
 
-from PySide6.QtCore import Qt, QTimer, QEvent
+from PySide6.QtCore import Qt, QTimer, QEvent, QPropertyAnimation, QEasingCurve, QThread
 from PySide6.QtGui import QDragEnterEvent, QDropEvent, QFont
 from PySide6.QtWidgets import (
     QApplication,
     QFrame,
+    QGraphicsOpacityEffect,
     QHBoxLayout,
     QLabel,
     QMainWindow,
@@ -29,14 +30,15 @@ from app.config import (
     save_project,
 )
 from app.models import Cue, TrackItem, TrackStatus, new_cue_id, new_track_id
+from app.icons import icon_list, icon_pause, icon_play, icon_settings
 from app.services.audio_player import AudioPlayer
 from app.services.exporter import export_subtitles
+from app.theme import Colors, controls_style, status_page_style
 from app.utils import format_time, is_audio_file, probe_duration_ms
 from app.widgets.dialogs import ExportDialog, PromptDialog, SettingsDialog
 from app.widgets.lyrics_view import LyricsView
 from app.widgets.playlist_panel import PlaylistPanel
 from app.workers import PipelineWorker, RetranslateWorker, WorkerHost
-from PySide6.QtCore import QThread
 
 
 def _format_status_text(text: str, limit: int = 500) -> str:
@@ -95,35 +97,138 @@ class MainWindow(QMainWindow):
         root_layout.setSpacing(0)
 
         main_col = QVBoxLayout()
-        main_col.setContentsMargins(16, 16, 16, 12)
-        main_col.setSpacing(12)
+        main_col.setContentsMargins(20, 18, 20, 14)
+        main_col.setSpacing(14)
 
         self.stack = QStackedWidget()
+        self.stack.setStyleSheet(status_page_style())
+
+        # —— 空态：拖入区 ——
         self.empty_label = QLabel(
-            "请将音频文件（mp3 或 wav）拖进来\n或拖入工程文件（.xx1proj）继续上次工作"
+            "将 mp3 / wav 拖到这里\n或拖入 .xx1proj 继续上次的工作"
         )
+        self.empty_label.setObjectName("StatusTitle")
         self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.empty_label.setWordWrap(True)
-        f = QFont()
-        f.setPointSize(16)
-        self.empty_label.setFont(f)
-        self.empty_label.setStyleSheet("color:#666;")
+        title_font = QFont()
+        title_font.setPointSize(15)
+        title_font.setWeight(QFont.Weight.DemiBold)
+        self.empty_label.setFont(title_font)
 
+        empty_hint = QLabel("先在设置里配好识别与翻译接口，再点「开始翻译」")
+        empty_hint.setObjectName("StatusBody")
+        empty_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        empty_hint.setWordWrap(True)
+
+        empty_eyebrow = QLabel("拖入开始")
+        empty_eyebrow.setObjectName("StatusEyebrow")
+        empty_eyebrow.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        drop = QFrame()
+        drop.setObjectName("DropZone")
+        drop.setMinimumHeight(220)
+        drop.setMinimumWidth(440)
+        drop.setMaximumWidth(560)
+        drop_l = QVBoxLayout(drop)
+        drop_l.setContentsMargins(36, 40, 36, 40)
+        drop_l.setSpacing(12)
+        drop_l.addStretch(1)
+        drop_l.addWidget(empty_eyebrow)
+        drop_l.addWidget(self.empty_label)
+        drop_l.addWidget(empty_hint)
+        drop_l.addStretch(1)
+
+        self.page_empty = QWidget()
+        pe = QVBoxLayout(self.page_empty)
+        pe.setContentsMargins(24, 28, 24, 12)
+        pe.addStretch(1)
+        pe.addWidget(drop, 0, Qt.AlignmentFlag.AlignHCenter)
+        pe.addStretch(1)
+
+        # —— 等待 / 失败 / 取消 ——
         self.wait_label = QLabel("正在等待翻译任务开始")
+        self.wait_label.setObjectName("StatusBody")
         self.wait_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.wait_label.setWordWrap(True)
         self.wait_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        self.wait_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        self.wait_label.setFont(f)
-        self.wait_label.setStyleSheet("color:#444;")
+        self.wait_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
 
+        wait_title = QLabel("稍候")
+        wait_title.setObjectName("StatusTitle")
+        wait_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        wait_title.setFont(title_font)
+        self._wait_title = wait_title
+
+        wait_eyebrow = QLabel("待命")
+        wait_eyebrow.setObjectName("StatusEyebrow")
+        wait_eyebrow.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._wait_eyebrow = wait_eyebrow
+
+        wait_card = QFrame()
+        wait_card.setObjectName("StatusCard")
+        wait_card.setMinimumWidth(420)
+        wait_card.setMaximumWidth(560)
+        wc = QVBoxLayout(wait_card)
+        wc.setContentsMargins(32, 36, 32, 36)
+        wc.setSpacing(10)
+        wc.addWidget(wait_eyebrow)
+        wc.addWidget(wait_title)
+        wc.addWidget(self.wait_label)
+
+        self.page_wait = QWidget()
+        pw = QVBoxLayout(self.page_wait)
+        pw.setContentsMargins(24, 28, 24, 12)
+        pw.addStretch(1)
+        pw.addWidget(wait_card, 0, Qt.AlignmentFlag.AlignHCenter)
+        pw.addStretch(1)
+
+        # —— 进度 ——
         self.progress_label = QLabel("")
+        self.progress_label.setObjectName("StatusBody")
         self.progress_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.progress_label.setWordWrap(True)
         self.progress_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        self.progress_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        self.progress_label.setFont(f)
-        self.progress_label.setStyleSheet("color:#1a5fb4;")
+        self.progress_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+
+        progress_title = QLabel("正在处理")
+        progress_title.setObjectName("StatusTitle")
+        progress_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        progress_title.setFont(title_font)
+
+        progress_eyebrow = QLabel("处理中")
+        progress_eyebrow.setObjectName("StatusEyebrow")
+        progress_eyebrow.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self._breath_dot = QLabel("●")
+        self._breath_dot.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._breath_dot.setStyleSheet(f"color:{Colors.accent};font-size:14px;")
+        self._breath_effect = QGraphicsOpacityEffect(self._breath_dot)
+        self._breath_dot.setGraphicsEffect(self._breath_effect)
+        self._breath_anim = QPropertyAnimation(self._breath_effect, b"opacity", self)
+        self._breath_anim.setDuration(1600)
+        self._breath_anim.setStartValue(0.28)
+        self._breath_anim.setEndValue(1.0)
+        self._breath_anim.setEasingCurve(QEasingCurve.Type.InOutSine)
+        self._breath_anim.setLoopCount(-1)
+
+        progress_card = QFrame()
+        progress_card.setObjectName("StatusCard")
+        progress_card.setMinimumWidth(420)
+        progress_card.setMaximumWidth(560)
+        pc = QVBoxLayout(progress_card)
+        pc.setContentsMargins(32, 36, 32, 36)
+        pc.setSpacing(10)
+        pc.addWidget(progress_eyebrow)
+        pc.addWidget(self._breath_dot)
+        pc.addWidget(progress_title)
+        pc.addWidget(self.progress_label)
+
+        self.page_progress = QWidget()
+        pp = QVBoxLayout(self.page_progress)
+        pp.setContentsMargins(24, 28, 24, 12)
+        pp.addStretch(1)
+        pp.addWidget(progress_card, 0, Qt.AlignmentFlag.AlignHCenter)
+        pp.addStretch(1)
 
         self.lyrics = LyricsView()
         self.lyrics.translate_cue.connect(self._on_retranslate_cue)
@@ -132,37 +237,29 @@ class MainWindow(QMainWindow):
         self.lyrics.cue_delete_requested.connect(self._on_cue_delete)
         self.lyrics.cue_insert_after_requested.connect(self._on_cue_insert_after)
         self.lyrics.cue_seek_requested.connect(self._on_cue_seek_requested)
-
-        self.page_empty = QWidget()
-        pe = QVBoxLayout(self.page_empty)
-        pe.addWidget(self.empty_label)
-        self.page_wait = QWidget()
-        pw = QVBoxLayout(self.page_wait)
-        pw.addWidget(self.wait_label)
-        self.page_progress = QWidget()
-        pp = QVBoxLayout(self.page_progress)
-        pp.addWidget(self.progress_label)
         self.page_lyrics = self.lyrics
 
         self.stack.addWidget(self.page_empty)
         self.stack.addWidget(self.page_wait)
         self.stack.addWidget(self.page_progress)
         self.stack.addWidget(self.page_lyrics)
+        self.stack.currentChanged.connect(self._on_stack_changed)
         main_col.addWidget(self.stack, 1)
 
         # Controls
         controls = QFrame()
         controls.setObjectName("Controls")
-        controls.setStyleSheet(
-            "#Controls{background:#f3f3f3;border-radius:10px;}"
-            "QPushButton{padding:6px 12px;}"
-        )
+        controls.setStyleSheet(controls_style())
         cl = QVBoxLayout(controls)
-        cl.setContentsMargins(12, 10, 12, 10)
+        cl.setContentsMargins(16, 12, 16, 12)
+        cl.setSpacing(8)
 
         time_row = QHBoxLayout()
+        time_row.setSpacing(10)
         self.pos_label = QLabel("0:00")
+        self.pos_label.setObjectName("TimeLabel")
         self.dur_label = QLabel("0:00")
+        self.dur_label.setObjectName("TimeLabel")
         self.slider = QSlider(Qt.Orientation.Horizontal)
         self.slider.setEnabled(False)
         self.slider.setFocusPolicy(Qt.FocusPolicy.NoFocus)
@@ -175,16 +272,22 @@ class MainWindow(QMainWindow):
         cl.addLayout(time_row)
 
         self.filename_label = QLabel("未选择文件")
+        self.filename_label.setObjectName("FileName")
         self.filename_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.filename_label.setStyleSheet("font-weight:600;")
         cl.addWidget(self.filename_label)
 
         btn_row = QHBoxLayout()
-        self.btn_play = QPushButton("播放")
+        btn_row.setSpacing(8)
+        self.btn_play = QPushButton()
+        self.btn_play.setObjectName("IconButton")
+        self.btn_play.setIcon(icon_play())
+        self.btn_play.setFixedSize(36, 36)
+        self.btn_play.setToolTip("播放")
         self.btn_play.clicked.connect(self._toggle_play)
         self._speed_options = (1.0, 1.25, 1.5, 2.0, 3.0)
         self._speed_index = 0
         self.btn_speed = QPushButton("x1")
+        self.btn_speed.setObjectName("GhostButton")
         self.btn_speed.setFixedWidth(56)
         self.btn_speed.setToolTip("播放倍速")
         self.btn_speed.clicked.connect(self._cycle_playback_speed)
@@ -195,19 +298,29 @@ class MainWindow(QMainWindow):
         self.volume_slider.setToolTip("音量")
         self.volume_slider.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.volume_slider.valueChanged.connect(self._on_volume_changed)
-        self.btn_settings = QPushButton("设置")
+        self.btn_settings = QPushButton()
+        self.btn_settings.setObjectName("IconButton")
+        self.btn_settings.setIcon(icon_settings())
+        self.btn_settings.setFixedSize(36, 36)
+        self.btn_settings.setToolTip("设置")
         self.btn_settings.clicked.connect(self._open_settings)
         self.btn_prompt = QPushButton("附加提示词")
         self.btn_prompt.clicked.connect(self._open_prompt)
         self.btn_main = QPushButton("开始翻译")
+        self.btn_main.setObjectName("PrimaryButton")
         self.btn_main.clicked.connect(self._on_main_action)
         self.btn_export = QPushButton("导出")
         self.btn_export.clicked.connect(self._on_export)
         self.btn_export.hide()
         self.btn_cancel = QPushButton("取消翻译")
+        self.btn_cancel.setObjectName("DangerButton")
         self.btn_cancel.clicked.connect(self._on_cancel)
         self.btn_cancel.hide()
-        self.btn_playlist = QPushButton("播放列表")
+        self.btn_playlist = QPushButton()
+        self.btn_playlist.setObjectName("IconButton")
+        self.btn_playlist.setIcon(icon_list())
+        self.btn_playlist.setFixedSize(36, 36)
+        self.btn_playlist.setToolTip("播放列表")
         self.btn_playlist.clicked.connect(self._toggle_playlist)
 
         for b in (
@@ -238,6 +351,15 @@ class MainWindow(QMainWindow):
         self.playlist_panel.remove_track_requested.connect(self._remove_track)
         self.playlist_panel.setVisible(self.config.playlist_expanded)
         root_layout.addWidget(self.playlist_panel)
+
+    def _on_stack_changed(self, index: int) -> None:
+        """进度页开启呼吸动效，离开时停下。"""
+        if self.stack.widget(index) is self.page_progress:
+            if self._breath_anim.state() != QPropertyAnimation.State.Running:
+                self._breath_anim.start()
+        else:
+            self._breath_anim.stop()
+            self._breath_effect.setOpacity(1.0)
 
     # ---- project ----
     def _schedule_project_save(self) -> None:
@@ -561,7 +683,9 @@ class MainWindow(QMainWindow):
         track = self._current_track()
         self.playlist_panel.set_tracks(self.tracks, self.current_track_id)
         self.playlist_panel.setVisible(self.config.playlist_expanded)
-        self.btn_playlist.setText("收起列表" if self.config.playlist_expanded else "播放列表")
+        self.btn_playlist.setToolTip(
+            "收起列表" if self.config.playlist_expanded else "播放列表"
+        )
 
         if not track:
             self.stack.setCurrentWidget(self.page_empty)
@@ -596,18 +720,26 @@ class MainWindow(QMainWindow):
             self.btn_export.hide()
         elif track.status == TrackStatus.QUEUED:
             self.stack.setCurrentWidget(self.page_wait)
+            self._wait_eyebrow.setText("排队")
+            self._wait_title.setText("排队中")
             self.wait_label.setText("已加入翻译队列，等待中…")
             self.btn_export.hide()
         elif track.status == TrackStatus.FAILED:
             self.stack.setCurrentWidget(self.page_wait)
+            self._wait_eyebrow.setText("失败")
+            self._wait_title.setText("出错了")
             self.wait_label.setText(_format_status_text(f"失败：{track.error_message}"))
             self.btn_export.hide()
         elif track.status == TrackStatus.CANCELLED:
             self.stack.setCurrentWidget(self.page_wait)
+            self._wait_eyebrow.setText("取消")
+            self._wait_title.setText("已取消")
             self.wait_label.setText("已取消，可重新开始")
             self.btn_export.hide()
         else:
             self.stack.setCurrentWidget(self.page_wait)
+            self._wait_eyebrow.setText("待命")
+            self._wait_title.setText("准备就绪")
             self.wait_label.setText("正在等待翻译任务开始")
             self.btn_export.hide()
 
@@ -738,11 +870,15 @@ class MainWindow(QMainWindow):
         QMessageBox.warning(self, "播放失败", message or "未知错误")
 
     def _on_player_output_changed(self, name: str) -> None:
-        tip = f"当前输出设备：{name}" if name else "当前输出设备：未知"
+        action = "暂停" if self.player.is_playing() else "播放"
+        tip = f"{action} · {name}" if name else action
         self.btn_play.setToolTip(tip)
 
     def _on_playing_changed(self, playing: bool) -> None:
-        self.btn_play.setText("暂停" if playing else "播放")
+        self.btn_play.setIcon(icon_pause() if playing else icon_play())
+        out = self.player.output_name()
+        action = "暂停" if playing else "播放"
+        self.btn_play.setToolTip(f"{action} · {out}" if out else action)
         track = self._current_track()
         if track and track.status == TrackStatus.DONE:
             self.lyrics.set_editable(not playing)
@@ -798,7 +934,9 @@ class MainWindow(QMainWindow):
     def _toggle_playlist(self) -> None:
         self.config.playlist_expanded = not self.config.playlist_expanded
         self.playlist_panel.setVisible(self.config.playlist_expanded)
-        self.btn_playlist.setText("收起列表" if self.config.playlist_expanded else "播放列表")
+        self.btn_playlist.setToolTip(
+            "收起列表" if self.config.playlist_expanded else "播放列表"
+        )
         self.store.save_config(self.config)
 
     # ---- translate queue ----

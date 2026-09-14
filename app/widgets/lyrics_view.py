@@ -15,6 +15,8 @@ from PySide6.QtWidgets import (
 )
 
 from app.models import Cue
+from app.icons import icon_minus, icon_plus
+from app.theme import Colors, cue_row_style
 from app.utils import format_cue_time, parse_cue_time
 
 
@@ -40,16 +42,20 @@ class CueRow(QFrame):
         self.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(8, 6, 8, 6)
-        layout.setSpacing(8)
+        layout.setContentsMargins(12, 10, 10, 10)
+        layout.setSpacing(10)
 
         self.start_edit = QLineEdit(format_cue_time(self._start_ms))
         self.end_edit = QLineEdit(format_cue_time(self._end_ms))
         for ed in (self.start_edit, self.end_edit):
-            ed.setFixedWidth(88)
+            ed.setFixedWidth(92)
             ed.setAlignment(Qt.AlignmentFlag.AlignCenter)
             ed.setToolTip("时间格式如 1:23.456")
             ed.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
+            ed.setStyleSheet(
+                "QLineEdit{font-family:'Cascadia Mono','Consolas','Microsoft YaHei UI';"
+                "font-size:12px;}"
+            )
         self.start_edit.editingFinished.connect(self._emit_timing)
         self.end_edit.editingFinished.connect(self._emit_timing)
 
@@ -60,6 +66,7 @@ class CueRow(QFrame):
             row.setSpacing(4)
             lab = QLabel(title)
             lab.setFixedWidth(14)
+            lab.setStyleSheet(f"color:{Colors.ink_faint};font-size:11px;")
             row.addWidget(lab)
             row.addWidget(edit)
             wrap.installEventFilter(self)
@@ -68,35 +75,44 @@ class CueRow(QFrame):
 
         time_col = QVBoxLayout()
         time_col.setContentsMargins(0, 0, 0, 0)
-        time_col.setSpacing(4)
+        time_col.setSpacing(6)
         time_col.addWidget(_time_row("起", self.start_edit))
         time_col.addWidget(_time_row("止", self.end_edit))
         layout.addLayout(time_col, 0)
 
         self.source_edit = QLineEdit(cue.source_text)
+        self.source_edit.setObjectName("ContentEdit")
         self.source_edit.setPlaceholderText("原文")
         self.source_edit.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
         self.target_edit = QLineEdit(cue.target_text)
+        self.target_edit.setObjectName("ContentEdit")
         self.target_edit.setPlaceholderText("译文")
         self.target_edit.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
         text_col = QVBoxLayout()
         text_col.setContentsMargins(0, 0, 0, 0)
-        text_col.setSpacing(4)
+        text_col.setSpacing(6)
         text_col.addWidget(self.source_edit)
         text_col.addWidget(self.target_edit)
         layout.addLayout(text_col, 1)
 
         self.btn_translate = QPushButton("翻译")
-        self.btn_translate.setFixedWidth(92)
+        self.btn_translate.setFixedWidth(72)
+        self.btn_translate.setFixedHeight(28)
         self.btn_translate.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.btn_translate.clicked.connect(self._on_translate_click)
-        self.btn_insert = QPushButton("后加")
-        self.btn_insert.setFixedWidth(44)
+
+        self.btn_insert = QPushButton()
+        self.btn_insert.setObjectName("IconQuiet")
+        self.btn_insert.setIcon(icon_plus())
+        self.btn_insert.setFixedSize(28, 28)
         self.btn_insert.setToolTip("在这句后面插入一句")
         self.btn_insert.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.btn_insert.clicked.connect(lambda: self.insert_after_clicked.emit(self.cue_id))
-        self.btn_delete = QPushButton("删除")
-        self.btn_delete.setFixedWidth(44)
+        self.btn_delete = QPushButton()
+        self.btn_delete.setObjectName("IconDanger")
+        self.btn_delete.setIcon(icon_minus())
+        self.btn_delete.setFixedSize(28, 28)
+        self.btn_delete.setToolTip("删除这一句")
         self.btn_delete.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.btn_delete.clicked.connect(lambda: self.delete_clicked.emit(self.cue_id))
 
@@ -105,12 +121,12 @@ class CueRow(QFrame):
         btn_top.addWidget(self.btn_translate)
         btn_bot = QHBoxLayout()
         btn_bot.setContentsMargins(0, 0, 0, 0)
-        btn_bot.setSpacing(4)
+        btn_bot.setSpacing(6)
         btn_bot.addWidget(self.btn_insert)
         btn_bot.addWidget(self.btn_delete)
         btn_col = QVBoxLayout()
         btn_col.setContentsMargins(0, 0, 0, 0)
-        btn_col.setSpacing(4)
+        btn_col.setSpacing(6)
         btn_col.addLayout(btn_top)
         btn_col.addLayout(btn_bot)
         layout.addLayout(btn_col, 0)
@@ -200,25 +216,10 @@ class CueRow(QFrame):
         self.btn_translate.setText("翻译" if enabled else "…")
 
     def set_active_level(self, level: int, content_width: int | None = None) -> None:
-        """0=当前句（框选高亮），其它=普通。content_width 保留兼容。"""
+        """0=当前句（左侧色条高亮），其它=普通。content_width 保留兼容。"""
         del content_width
         self._level = level
-        if level == 0:
-            self.setStyleSheet(
-                "#CueRow {"
-                "  background: #eaf2ff;"
-                "  border: 2px solid #3b82f6;"
-                "  border-radius: 8px;"
-                "}"
-            )
-        else:
-            self.setStyleSheet(
-                "#CueRow {"
-                "  background: #fafafa;"
-                "  border: 1px solid #e5e5e5;"
-                "  border-radius: 8px;"
-                "}"
-            )
+        self.setStyleSheet(cue_row_style(level == 0))
 
     def reflow(self, content_width: int | None = None) -> None:
         del content_width
@@ -256,8 +257,8 @@ class LyricsView(QWidget):
         self.container = QWidget()
         self.container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
         self.container_layout = QVBoxLayout(self.container)
-        self.container_layout.setContentsMargins(8, 16, 8, 16)
-        self.container_layout.setSpacing(10)
+        self.container_layout.setContentsMargins(4, 12, 4, 12)
+        self.container_layout.setSpacing(8)
         self.container_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         self.scroll.setWidget(self.container)
         outer.addWidget(self.scroll)

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QFont
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.models import TrackItem, TrackStatus
+from app.theme import Colors, FONT_UI, playlist_style
 
 
 class PlaylistPanel(QWidget):
@@ -23,13 +24,19 @@ class PlaylistPanel(QWidget):
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.setMinimumWidth(260)
+        self.setObjectName("PlaylistPanel")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setMinimumWidth(248)
+        self.setStyleSheet(playlist_style())
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setContentsMargins(10, 14, 10, 12)
+        layout.setSpacing(8)
         title = QLabel("播放列表")
-        title.setStyleSheet("font-weight:600;font-size:14px;")
+        title.setObjectName("PlaylistTitle")
         layout.addWidget(title)
         self.list = QListWidget()
+        self.list.setFrameShape(QListWidget.Shape.NoFrame)
+        self.list.setSpacing(2)
         self.list.itemClicked.connect(self._on_click)
         self.list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.list.customContextMenuRequested.connect(self._on_menu)
@@ -44,9 +51,9 @@ class PlaylistPanel(QWidget):
         for i, track in enumerate(tracks):
             item = QListWidgetItem()
             item.setData(Qt.ItemDataRole.UserRole, track.id)
-            item.setSizeHint(self._make_row(track, track.id == current_id).sizeHint())
-            self.list.addItem(item)
             row = self._make_row(track, track.id == current_id)
+            item.setSizeHint(row.sizeHint())
+            self.list.addItem(item)
             self.list.setItemWidget(item, row)
             if track.id == current_id:
                 current_row = i
@@ -56,37 +63,60 @@ class PlaylistPanel(QWidget):
 
     def _make_row(self, track: TrackItem, selected: bool) -> QWidget:
         row = QWidget()
-        hl = QHBoxLayout(row)
-        hl.setContentsMargins(6, 4, 4, 4)
-        hl.setSpacing(4)
+        row.setObjectName("PlaylistRowSelected" if selected else "PlaylistRow")
+        row.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        outer = QVBoxLayout(row)
+        outer.setContentsMargins(10, 8, 6, 8)
+        outer.setSpacing(2)
 
-        text = QLabel(f"{track.display_name}\n{track.status.label}")
-        text.setWordWrap(True)
+        top = QHBoxLayout()
+        top.setContentsMargins(0, 0, 0, 0)
+        top.setSpacing(4)
+
+        name = QLabel(track.display_name)
+        name.setWordWrap(True)
+        name.setObjectName("TrackName")
+        name_font = QFont(FONT_UI)
+        name_font.setPointSize(12)
+        name_font.setWeight(QFont.Weight.DemiBold)
+        name.setFont(name_font)
+
+        status = QLabel(track.status.label)
+        status.setObjectName("TrackStatus")
+        status_font = QFont(FONT_UI)
+        status_font.setPointSize(11)
+        status.setFont(status_font)
         if track.status == TrackStatus.DONE:
-            text.setStyleSheet("color:#1a7f37;")
+            tone = Colors.ok
         elif track.status == TrackStatus.FAILED:
-            text.setStyleSheet("color:#c01c28;")
+            tone = Colors.err
         elif track.status.is_busy:
-            text.setStyleSheet("color:#1a5fb4;")
-        if selected:
-            row.setStyleSheet("background:#e8e8e8;border-radius:4px;")
-        hl.addWidget(text, 1)
+            tone = Colors.busy
+        else:
+            tone = Colors.ink_faint
+        status.setStyleSheet(
+            f"color:{tone};background:transparent;border:none;"
+        )
 
-        # 识别/翻译进行中不可叉掉
         can_remove = not track.status.is_active_pipeline
         btn = QPushButton("×")
-        btn.setFixedSize(24, 24)
+        btn.setObjectName("RemoveTrack")
+        btn.setFixedSize(22, 22)
         btn.setToolTip("从列表移除（保留工程文件）" if can_remove else "正在处理，无法移除")
         btn.setEnabled(can_remove)
-        btn.setStyleSheet(
-            "QPushButton{border:none;color:#666;font-size:16px;}"
-            "QPushButton:hover{color:#c01c28;}"
-            "QPushButton:disabled{color:#ccc;}"
-        )
         tid = track.id
         btn.clicked.connect(lambda _=False, x=tid: self.remove_track_requested.emit(x))
-        hl.addWidget(btn, 0, Qt.AlignmentFlag.AlignTop)
-        row.setMinimumHeight(44)
+
+        text_col = QVBoxLayout()
+        text_col.setContentsMargins(0, 0, 0, 0)
+        text_col.setSpacing(2)
+        text_col.addWidget(name)
+        text_col.addWidget(status)
+        top.addLayout(text_col, 1)
+        top.addWidget(btn, 0, Qt.AlignmentFlag.AlignTop)
+        outer.addLayout(top)
+
+        row.setMinimumHeight(52)
         return row
 
     def _on_click(self, item: QListWidgetItem) -> None:
