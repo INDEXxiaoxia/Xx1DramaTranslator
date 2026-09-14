@@ -18,9 +18,10 @@ __pycache__/
 venv/
 env/
 
-# 打包 / IDE
+# 打包 / IDE / 发布产物（exe 走 GitHub Release，不进仓库）
 build/
 dist/
+*.exe
 .idea/
 .vscode/
 *.spec.bak

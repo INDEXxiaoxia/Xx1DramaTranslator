@@ -1,13 +1,16 @@
 # -*- mode: python ; coding: utf-8 -*-
 # PyInstaller spec: pyinstaller Xx1DramaTranslator.spec
 
+import os
+
 block_cipher = None
+_icon = os.path.join(SPECPATH, "assets", "app.ico")
 
 a = Analysis(
-    ['main.py'],
+    ["main.py"],
     pathex=[],
     binaries=[],
-    datas=[('assets/app.ico', 'assets')],
+    datas=[(_icon, "assets")],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -27,11 +30,11 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name='Xx1DramaTranslator',
+    name="Xx1DramaTranslator",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    upx=False,
     upx_exclude=[],
     runtime_tmpdir=None,
     console=False,
@@ -40,5 +43,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon='assets/app.ico',
+    icon=_icon,
 )
