@@ -1,6 +1,6 @@
 # Xx1DramaTranslator
 
-音频字幕工具 **V1.0**：识别广播剧/对白、大模型切句并翻译，支持歌词式校对、时间轴微调、SRT/ASS 导出。
+音频字幕工具 **V1.1**：识别广播剧/对白、大模型切句并翻译，支持歌词式校对、时间轴微调、SRT/ASS 导出。
 
 原文 / 译文可在设置里任选，例如日语、英语、韩语、简体中文、繁体中文等相互转换，不限于某一种语言。
 
@@ -23,7 +23,15 @@
 pip install -r requirements.txt
 ```
 
-音频切分若用 pydub 处理较长文件，本机需能调用 ffmpeg。
+### 关于 ffmpeg（处理 MP3 需要）
+
+- **WAV** 可直接识别，不依赖 ffmpeg。
+- **MP3** 等非 WAV 格式需要本机有 ffmpeg。官方 Windows 包体积较大（essentials 约数十 MB，full 可上百 MB），**未内置**进本程序。
+- 任选其一即可：
+  1. `winget install --id=Gyan.FFmpeg -e`（安装后新开终端确认 `ffmpeg -version`）
+  2. 从 [gyan.dev/ffmpeg/builds](https://www.gyan.dev/ffmpeg/builds/) 下载 essentials，将 `ffmpeg.exe` 放到程序目录旁，或 `vendor\ffmpeg\`
+  3. 设置环境变量 `XX1_FFMPEG` 指向 `ffmpeg.exe` 完整路径  
+- 若缺少 ffmpeg，翻译 MP3 时会给出明确中文提示（不再只显示含糊的「找不到文件」）。
 
 ## 配置（请勿把密钥提交到 Git）
 
@@ -61,7 +69,7 @@ python main.py
 pack.bat
 ```
 
-完成后得到 `dist\Xx1DramaTranslator.exe`（无控制台窗口，图标为 `assets/app.ico`）。exe 会在**同目录**读写 `config.json`，请自行填写 API，不要把带密钥的配置和 exe 一起随意外发。
+完成后得到 `dist\Xx1DramaTranslator.exe`（无控制台窗口，图标为 `assets/app.ico`）。exe 会在**同目录**读写 `config.json`，请自行填写 API，不要把带密钥的配置和 exe 一起随意外发。若需支持 MP3，可把 `ffmpeg.exe` 放在 exe 同目录。
 
 ## 使用
 

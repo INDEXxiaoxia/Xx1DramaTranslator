@@ -9,6 +9,12 @@ config.json
 *.m4a
 *.ogg
 
+# 用户自备的 ffmpeg（体积大，不进仓库）
+vendor/ffmpeg/*.exe
+/ffmpeg.exe
+/ffprobe.exe
+/ffplay.exe
+
 # Python
 __pycache__/
 *.py[cod]

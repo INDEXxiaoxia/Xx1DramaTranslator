@@ -184,7 +184,19 @@ class AudioPreparer:
 
         from pydub import AudioSegment
 
-        seg = AudioSegment.from_file(str(path))
+        from app.services.ffmpeg_util import (
+            FfmpegMissingError,
+            decode_error_message,
+            ensure_ffmpeg_for_pydub,
+        )
+
+        try:
+            ensure_ffmpeg_for_pydub()
+            seg = AudioSegment.from_file(str(path))
+        except FfmpegMissingError:
+            raise
+        except Exception as exc:
+            raise RuntimeError(decode_error_message(exc, path)) from exc
         seg = seg.set_channels(1)
         sample_rate = seg.frame_rate
         samples = np.array(seg.get_array_of_samples()).astype(np.float32)
